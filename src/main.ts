@@ -30,15 +30,15 @@ export default class YoutubeTrackerPlugin extends Plugin {
 		);
 
 		this.addCommand({
-			id: "open-youtube-tracker",
-			name: "Open YouTube Tracker",
+			id: "open-dashboard",
+			name: "Open dashboard",
 			callback: () => {
 				void this.activateView();
 			},
 		});
 
 		this.addCommand({
-			id: "refresh-youtube-tracker",
+			id: "refresh-videos",
 			name: "Refresh videos",
 			callback: () => {
 				void this.refreshAll();

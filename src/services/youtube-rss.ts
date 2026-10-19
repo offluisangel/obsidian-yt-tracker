@@ -8,7 +8,7 @@ export function rssUrlFor(channelId: string): string {
 }
 
 export function sleep(ms: number): Promise<void> {
-	return new Promise((resolve) => setTimeout(resolve, ms));
+	return new Promise((resolve) => window.setTimeout(resolve, ms));
 }
 
 export function isRetryableStatus(status: number): boolean {
@@ -103,12 +103,16 @@ async function fetchTitleViaOEmbed(videoId: string): Promise<{ title?: string; a
 			headers: { "User-Agent": "Mozilla/5.0 (Obsidian plugin)" },
 		});
 		if (res.status >= 200 && res.status < 300) {
-			const data = typeof res.json === "object" && res.json !== null ? (res.json as Record<string, unknown>) : JSON.parse(res.text);
-			const title = typeof data.title === "string" ? data.title : undefined;
-			const author = typeof data.author_name === "string" ? data.author_name : undefined;
-			return { title, author };
+			const data: unknown = JSON.parse(res.text);
+			if (typeof data === "object" && data !== null && !Array.isArray(data)) {
+				const record = data as Record<string, unknown>;
+				const title = typeof record.title === "string" ? record.title : undefined;
+				const author = typeof record.author_name === "string" ? record.author_name : undefined;
+				return { title, author };
+			}
 		}
 	} catch {
+		return {};
 	}
 	return {};
 }

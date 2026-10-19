@@ -80,7 +80,7 @@ export class TrackerDashboardView extends ItemView {
 		const titleBlock = header.createDiv({ cls: "yt-title-block" });
 		titleBlock.createEl("h3", { text: "YouTube Tracker", cls: "yt-title" });
 		const count = this.settings.channels.length;
-		titleBlock.createEl("div", {
+		titleBlock.createDiv({
 			text: count === 0 ? "Track the latest videos from your channels" : `${count} ${count === 1 ? "channel" : "channels"} · ${this.formatLastUpdate()}`,
 			cls: "yt-subtitle",
 		});

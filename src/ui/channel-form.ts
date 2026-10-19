@@ -24,8 +24,8 @@ export class ChannelFormModal extends Modal {
 		const input = contentEl.createEl("input", {
 			type: "text",
 			placeholder: "https://www.youtube.com/@channel-name",
+			cls: "youtube-tracker-channel-url-input",
 		});
-		input.style.width = "100%";
 		input.addEventListener("input", () => {
 			this.url = input.value;
 			this.clearError();
@@ -35,7 +35,7 @@ export class ChannelFormModal extends Modal {
 				void this.handleSave();
 			}
 		});
-		setTimeout(() => input.focus(), 50);
+		window.setTimeout(() => input.focus(), 50);
 
 		this.errorEl = contentEl.createDiv({ cls: "youtube-tracker-error mod-warning" });
 		this.errorEl.hide();

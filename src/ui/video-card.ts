@@ -30,15 +30,15 @@ export function renderVideoCard(parent: HTMLElement, channel: TrackedChannel): v
 	dot.setAttr("aria-hidden", "true");
 	const nameWrap = head.createDiv({ cls: "yt-channel-id" });
 	nameWrap.createEl("strong", { text: channel.name || channel.channelId, cls: "yt-channel-name" });
-	nameWrap.createEl("span", { text: STATUS_LABEL[status], cls: `yt-badge yt-badge-${status}` });
+	nameWrap.createSpan({ text: STATUS_LABEL[status], cls: `yt-badge yt-badge-${status}` });
 	const ageText = channel.lastFetchedAt
 		? `Data retrieved ${formatAge(channel.lastFetchedAt)}`
 		: channel.lastAttemptAt
 			? `No valid data · last attempt ${formatAge(channel.lastAttemptAt)}`
 			: "Not checked yet";
-	nameWrap.createEl("span", { text: ageText, cls: "yt-data-age" });
+	nameWrap.createSpan({ text: ageText, cls: "yt-data-age" });
 	if (channel.lastError && channel.lastVideo && channel.lastAttemptAt) {
-		nameWrap.createEl("span", { text: `Last attempt ${formatAge(channel.lastAttemptAt)}`, cls: "yt-data-age" });
+		nameWrap.createSpan({ text: `Last attempt ${formatAge(channel.lastAttemptAt)}`, cls: "yt-data-age" });
 	}
 
 	if (channel.lastVideo) {
@@ -50,7 +50,7 @@ export function renderVideoCard(parent: HTMLElement, channel: TrackedChannel): v
 		img.alt = video.title;
 		img.loading = "lazy";
 		const body = card.createDiv({ cls: "yt-body" });
-		body.createEl("div", { text: video.title, cls: "yt-video-title" });
+		body.createDiv({ text: video.title, cls: "yt-video-title" });
 		body.createDiv({ cls: "yt-video-meta" }).setText(`${video.channelName} · ${formatDateTime(video.publishedAt)}`);
 
 		const actions = body.createDiv({ cls: "yt-actions" });
@@ -71,8 +71,8 @@ export function renderVideoCard(parent: HTMLElement, channel: TrackedChannel): v
 		}
 	} else if (channel.lastError) {
 		const body = card.createDiv({ cls: "yt-body" });
-		body.createEl("div", { text: "Could not update this channel.", cls: "yt-error-title" });
-		body.createEl("div", { text: channel.lastError, cls: "yt-error-msg" });
+		body.createDiv({ text: "Could not update this channel.", cls: "yt-error-title" });
+		body.createDiv({ text: channel.lastError, cls: "yt-error-msg" });
 		const actions = body.createDiv({ cls: "yt-actions" });
 		const openChannel = actions.createEl("a", { text: "Open channel", cls: "yt-btn" });
 		openChannel.href = channel.channelUrl;
@@ -81,15 +81,15 @@ export function renderVideoCard(parent: HTMLElement, channel: TrackedChannel): v
 	} else {
 		const body = card.createDiv({ cls: "yt-body" });
 		if (channel.lastError) {
-			body.createEl("div", { text: channel.lastError, cls: "yt-error-msg" });
-			body.createEl("div", {
+			body.createDiv({ text: channel.lastError, cls: "yt-error-msg" });
+			body.createDiv({
 				text: channel.lastErrorKind === "permanent"
 					? "Check that the channel is still available and the URL is correct."
 					: "Choose Refresh to try again.",
 				cls: "yt-empty",
 			});
 		} else {
-			body.createEl("div", { text: getChannelEmptyCopy(channel.lastResult), cls: "yt-empty" });
+			body.createDiv({ text: getChannelEmptyCopy(channel.lastResult), cls: "yt-empty" });
 		}
 	}
 }
