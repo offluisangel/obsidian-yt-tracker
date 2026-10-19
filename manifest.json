@@ -1,0 +1,10 @@
+{
+  "author": "@offluisangel",
+  "authorUrl": "https://github.com/offluisangel",
+  "description": "Track YouTube channel uploads manually in Obsidian, with Shorts filtering.",
+  "id": "youtube-tracker",
+  "isDesktopOnly": false,
+  "minAppVersion": "1.12.7",
+  "name": "YouTube Tracker",
+  "version": "0.1.0"
+}

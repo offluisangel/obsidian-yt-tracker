@@ -1,0 +1,1181 @@
+"use strict";
+var __defProp = Object.defineProperty;
+var __getOwnPropDesc = Object.getOwnPropertyDescriptor;
+var __getOwnPropNames = Object.getOwnPropertyNames;
+var __hasOwnProp = Object.prototype.hasOwnProperty;
+var __export = (target, all) => {
+  for (var name in all)
+    __defProp(target, name, { get: all[name], enumerable: true });
+};
+var __copyProps = (to, from, except, desc) => {
+  if (from && typeof from === "object" || typeof from === "function") {
+    for (let key of __getOwnPropNames(from))
+      if (!__hasOwnProp.call(to, key) && key !== except)
+        __defProp(to, key, { get: () => from[key], enumerable: !(desc = __getOwnPropDesc(from, key)) || desc.enumerable });
+  }
+  return to;
+};
+var __toCommonJS = (mod) => __copyProps(__defProp({}, "__esModule", { value: true }), mod);
+
+// src/main.ts
+var main_exports = {};
+__export(main_exports, {
+  default: () => YoutubeTrackerPlugin
+});
+module.exports = __toCommonJS(main_exports);
+var import_obsidian5 = require("obsidian");
+
+// src/settings.ts
+var DEFAULT_SETTINGS = {
+  channels: []
+};
+function normalizeStoredError(value) {
+  if (typeof value !== "string" || !value)
+    return {};
+  const lower = value.toLowerCase();
+  if (lower.includes("solo se encontraron shorts"))
+    return { result: "no-eligible-videos" };
+  if (lower.includes("429") || lower.includes("limit\xF3 las consultas")) {
+    return { message: "YouTube is limiting requests. Wait a few minutes, then choose Refresh to try again.", kind: "recoverable" };
+  }
+  if (lower.includes("sin conexi\xF3n") || lower.includes("no connection")) {
+    return { message: "No connection to YouTube. Check your network and choose Refresh to try again.", kind: "recoverable" };
+  }
+  if (lower.includes("403") || lower.includes("rechaz\xF3 la consulta")) {
+    return { message: "YouTube could not process the request. Wait a little, then choose Refresh to try again.", kind: "recoverable" };
+  }
+  if (lower.includes("404") || lower.includes("canal no encontrado")) {
+    return { message: "Could not check this channel. Check the link or try again later.", kind: "permanent" };
+  }
+  if (lower.includes("inv\xE1lido") || lower.includes("respuesta inv\xE1lida")) {
+    return { message: "Could not read YouTube's response. Choose Refresh to try again later.", kind: "recoverable" };
+  }
+  if (/[áéíóúñ¿¡]/i.test(value) || lower.includes("no se pudo") || lower.includes("no pudimos") || lower.includes("no pude")) {
+    return { message: "Could not check this channel. Choose Refresh to try again later.", kind: "recoverable" };
+  }
+  return { message: value };
+}
+function normalizeSettings(data) {
+  if (!data || typeof data !== "object") {
+    return { ...DEFAULT_SETTINGS, channels: [] };
+  }
+  const raw = data;
+  const channels = Array.isArray(raw.channels) ? raw.channels.filter(
+    (c) => !!c && typeof c === "object" && typeof c.channelId === "string" && c.channelId.length > 0
+  ).map((channel) => {
+    const storedError = normalizeStoredError(channel.lastError);
+    return {
+      ...channel,
+      lastFetchedAt: typeof channel.lastFetchedAt === "number" ? channel.lastFetchedAt : void 0,
+      lastAttemptAt: typeof channel.lastAttemptAt === "number" ? channel.lastAttemptAt : void 0,
+      lastResult: ["video", "no-eligible-videos", "empty"].includes(channel.lastResult ?? "") ? channel.lastResult : storedError.result,
+      lastError: storedError.message,
+      lastErrorKind: ["recoverable", "permanent"].includes(channel.lastErrorKind ?? "") ? channel.lastErrorKind : storedError.kind
+    };
+  }) : [];
+  return {
+    channels,
+    lastGlobalRefreshAt: typeof raw.lastGlobalRefreshAt === "number" ? raw.lastGlobalRefreshAt : void 0,
+    lastSuccessfulRefreshAt: typeof raw.lastSuccessfulRefreshAt === "number" ? raw.lastSuccessfulRefreshAt : void 0
+  };
+}
+
+// src/ui/dashboard-view.ts
+var import_obsidian = require("obsidian");
+
+// src/utils/date-utils.ts
+function parseDateSafe(value) {
+  if (!value)
+    return void 0;
+  const t = Date.parse(value);
+  return Number.isNaN(t) ? void 0 : t;
+}
+function formatDateTime(iso) {
+  if (!iso)
+    return "Unknown date";
+  const t = Date.parse(iso);
+  if (Number.isNaN(t))
+    return "Unknown date";
+  return new Date(t).toLocaleString("en-US");
+}
+function formatAge(value, now = Date.now()) {
+  const timestamp = typeof value === "number" ? value : value ? Date.parse(value) : Number.NaN;
+  if (!Number.isFinite(timestamp))
+    return "Unknown date";
+  const elapsed = Math.max(0, now - timestamp);
+  const minutes = Math.floor(elapsed / 6e4);
+  if (minutes < 1)
+    return "less than a minute ago";
+  if (minutes < 60)
+    return `${minutes} min ago`;
+  const hours = Math.floor(minutes / 60);
+  if (hours < 48)
+    return `${hours} hr ago`;
+  const days = Math.floor(hours / 24);
+  if (days < 30)
+    return `${days} ${days === 1 ? "day" : "days"} ago`;
+  const months = Math.floor(days / 30);
+  if (months < 12)
+    return `${months} ${months === 1 ? "month" : "months"} ago`;
+  const years = Math.floor(days / 365);
+  return `${years} ${years === 1 ? "year" : "years"} ago`;
+}
+
+// src/ui/copy.ts
+function getEmptyDashboardCopy() {
+  return {
+    title: "Keep up with your favorite channels",
+    description: "Add a YouTube channel and choose Refresh whenever you want to check for new videos. Updates are manual, and Shorts are filtered out."
+  };
+}
+function getChannelEmptyCopy(result) {
+  if (result === "no-eligible-videos") {
+    return "No long-form videos were found among recent uploads. Shorts are filtered out.";
+  }
+  if (result === "empty")
+    return "No recent videos to show.";
+  return "No data yet. Choose Refresh to check this channel for recent videos.";
+}
+
+// src/ui/video-card.ts
+function statusOf(channel) {
+  if (channel.lastError) {
+    if (channel.lastVideo)
+      return "stale";
+    return channel.lastErrorKind === "permanent" ? "permanent" : "recoverable";
+  }
+  if (channel.lastResult === "no-eligible-videos")
+    return "no-eligible-videos";
+  if (channel.lastVideo)
+    return "ok";
+  return "empty";
+}
+var STATUS_LABEL = {
+  ok: "Up to date",
+  stale: "Showing previous data",
+  recoverable: "Retry available",
+  permanent: "Check channel",
+  empty: "No data",
+  "no-eligible-videos": "No long-form videos"
+};
+function renderVideoCard(parent, channel) {
+  const card = parent.createDiv({ cls: "youtube-tracker-card" });
+  const status = statusOf(channel);
+  const head = card.createDiv({ cls: "youtube-tracker-card-head" });
+  const dot = head.createSpan({ cls: `yt-dot yt-dot-${status}` });
+  dot.setAttr("aria-hidden", "true");
+  const nameWrap = head.createDiv({ cls: "yt-channel-id" });
+  nameWrap.createEl("strong", { text: channel.name || channel.channelId, cls: "yt-channel-name" });
+  nameWrap.createEl("span", { text: STATUS_LABEL[status], cls: `yt-badge yt-badge-${status}` });
+  const ageText = channel.lastFetchedAt ? `Data retrieved ${formatAge(channel.lastFetchedAt)}` : channel.lastAttemptAt ? `No valid data \xB7 last attempt ${formatAge(channel.lastAttemptAt)}` : "Not checked yet";
+  nameWrap.createEl("span", { text: ageText, cls: "yt-data-age" });
+  if (channel.lastError && channel.lastVideo && channel.lastAttemptAt) {
+    nameWrap.createEl("span", { text: `Last attempt ${formatAge(channel.lastAttemptAt)}`, cls: "yt-data-age" });
+  }
+  if (channel.lastVideo) {
+    const video = channel.lastVideo;
+    const thumbUrl = video.thumbnail ?? `https://i.ytimg.com/vi/${video.videoId}/hqdefault.jpg`;
+    const thumbWrap = card.createDiv({ cls: "yt-thumb" });
+    const img = thumbWrap.createEl("img", { cls: "yt-thumb-img" });
+    img.src = thumbUrl;
+    img.alt = video.title;
+    img.loading = "lazy";
+    const body = card.createDiv({ cls: "yt-body" });
+    body.createEl("div", { text: video.title, cls: "yt-video-title" });
+    body.createDiv({ cls: "yt-video-meta" }).setText(`${video.channelName} \xB7 ${formatDateTime(video.publishedAt)}`);
+    const actions = body.createDiv({ cls: "yt-actions" });
+    const watch = actions.createEl("a", { text: "Watch on YouTube", cls: "yt-btn yt-btn-primary" });
+    watch.href = video.url;
+    watch.target = "_blank";
+    watch.rel = "noopener";
+    const openChannel = actions.createEl("a", { text: "Open channel", cls: "yt-btn" });
+    openChannel.href = channel.channelUrl;
+    openChannel.target = "_blank";
+    openChannel.rel = "noopener";
+    if (channel.lastError) {
+      const warn = body.createDiv({ cls: "yt-warn" });
+      warn.setText(`${channel.lastError} The last available video is still shown.`);
+    } else if (channel.lastResult === "no-eligible-videos") {
+      body.createDiv({ cls: "yt-empty", text: "Only Shorts were found recently; the latest long-form video remains shown." });
+    }
+  } else if (channel.lastError) {
+    const body = card.createDiv({ cls: "yt-body" });
+    body.createEl("div", { text: "Could not update this channel.", cls: "yt-error-title" });
+    body.createEl("div", { text: channel.lastError, cls: "yt-error-msg" });
+    const actions = body.createDiv({ cls: "yt-actions" });
+    const openChannel = actions.createEl("a", { text: "Open channel", cls: "yt-btn" });
+    openChannel.href = channel.channelUrl;
+    openChannel.target = "_blank";
+    openChannel.rel = "noopener";
+  } else {
+    const body = card.createDiv({ cls: "yt-body" });
+    if (channel.lastError) {
+      body.createEl("div", { text: channel.lastError, cls: "yt-error-msg" });
+      body.createEl("div", {
+        text: channel.lastErrorKind === "permanent" ? "Check that the channel is still available and the URL is correct." : "Choose Refresh to try again.",
+        cls: "yt-empty"
+      });
+    } else {
+      body.createEl("div", { text: getChannelEmptyCopy(channel.lastResult), cls: "yt-empty" });
+    }
+  }
+}
+
+// src/ui/dashboard-view.ts
+var VIEW_TYPE_TRACKER = "youtube-tracker-dashboard";
+var TrackerDashboardView = class extends import_obsidian.ItemView {
+  constructor(leaf, settings, cb) {
+    super(leaf);
+    this.refreshing = false;
+    this.settings = settings;
+    this.cb = cb;
+  }
+  getViewType() {
+    return VIEW_TYPE_TRACKER;
+  }
+  getDisplayText() {
+    return "YouTube Tracker";
+  }
+  getIcon() {
+    return "rss";
+  }
+  updateSettings(settings, refreshing) {
+    this.settings = settings;
+    if (typeof refreshing === "boolean")
+      this.refreshing = refreshing;
+    if (this.leaf.view === this) {
+      void this.render();
+    }
+  }
+  setRefreshing(value) {
+    this.refreshing = value;
+    if (this.leaf.view === this) {
+      void this.render();
+    }
+  }
+  updateCallbacks(cb) {
+    this.cb = cb;
+  }
+  async onOpen() {
+    await this.render();
+  }
+  async onClose() {
+  }
+  formatLastUpdate() {
+    if (this.settings.lastSuccessfulRefreshAt) {
+      return `Updated: ${new Date(this.settings.lastSuccessfulRefreshAt).toLocaleString("en-US")}`;
+    }
+    if (this.settings.lastGlobalRefreshAt) {
+      return `Last attempt: ${new Date(this.settings.lastGlobalRefreshAt).toLocaleString("en-US")}`;
+    }
+    return "Not updated yet.";
+  }
+  async render() {
+    const container = this.contentEl;
+    container.empty();
+    container.addClass("youtube-tracker-dashboard");
+    const header = container.createDiv({ cls: "yt-header" });
+    const titleBlock = header.createDiv({ cls: "yt-title-block" });
+    titleBlock.createEl("h3", { text: "YouTube Tracker", cls: "yt-title" });
+    const count = this.settings.channels.length;
+    titleBlock.createEl("div", {
+      text: count === 0 ? "Track the latest videos from your channels" : `${count} ${count === 1 ? "channel" : "channels"} \xB7 ${this.formatLastUpdate()}`,
+      cls: "yt-subtitle"
+    });
+    const actions = container.createDiv({ cls: "youtube-tracker-actions" });
+    const addBtn = actions.createEl("button", { text: "+ Add channel", cls: "mod-cta" });
+    const refreshBtn = actions.createEl("button", {
+      text: this.refreshing ? "Refreshing\u2026" : "Refresh"
+    });
+    refreshBtn.disabled = this.refreshing;
+    addBtn.addEventListener("click", () => this.cb.onAdd());
+    refreshBtn.addEventListener("click", () => {
+      if (this.refreshing)
+        return;
+      if (this.settings.channels.length === 0) {
+        new import_obsidian.Notice("Add a channel first.");
+        return;
+      }
+      this.cb.onRefresh();
+    });
+    if (this.refreshing) {
+      container.createDiv({ cls: "youtube-tracker-loading", text: "Checking feeds one by one so as not to overwhelm YouTube\u2026" });
+    }
+    const list = container.createDiv({ cls: "youtube-tracker-list" });
+    if (this.settings.channels.length === 0) {
+      const empty = list.createDiv({ cls: "youtube-tracker-empty" });
+      const copy = getEmptyDashboardCopy();
+      empty.createEl("h4", { text: copy.title, cls: "yt-empty-title" });
+      empty.createEl("p", { text: copy.description, cls: "yt-empty-sub" });
+      empty.createEl("p", {
+        text: "Paste a channel URL, such as youtube.com/@name or youtube.com/channel/ID.",
+        cls: "yt-empty-sub"
+      });
+      return;
+    }
+    for (const channel of this.settings.channels) {
+      const wrapper = list.createDiv({ cls: "youtube-tracker-channel-wrap" });
+      renderVideoCard(wrapper, channel);
+      const footer = wrapper.createDiv({ cls: "yt-card-footer" });
+      const del = footer.createEl("button", { text: "Delete", cls: "yt-btn-ghost" });
+      del.setAttr("aria-label", `Delete ${channel.name || channel.channelId}`);
+      del.addEventListener("click", () => this.cb.onRemove(channel.channelId));
+    }
+  }
+};
+
+// src/ui/channel-form.ts
+var import_obsidian2 = require("obsidian");
+var ChannelFormModal = class extends import_obsidian2.Modal {
+  constructor(app, onSubmit) {
+    super(app);
+    this.onSubmit = onSubmit;
+    this.url = "";
+    this.busy = false;
+    this.errorEl = null;
+    this.saveBtn = null;
+  }
+  onOpen() {
+    const { contentEl } = this;
+    contentEl.empty();
+    contentEl.addClass("youtube-tracker-form");
+    contentEl.createEl("h3", { text: "Add channel" });
+    contentEl.createEl("p", {
+      text: "Paste a channel URL. Supported formats: /channel/ID, /@handle, /c/name, or /user/name.",
+      cls: "setting-item-description"
+    });
+    const input = contentEl.createEl("input", {
+      type: "text",
+      placeholder: "https://www.youtube.com/@channel-name"
+    });
+    input.style.width = "100%";
+    input.addEventListener("input", () => {
+      this.url = input.value;
+      this.clearError();
+    });
+    input.addEventListener("keydown", (e) => {
+      if (e.key === "Enter") {
+        void this.handleSave();
+      }
+    });
+    setTimeout(() => input.focus(), 50);
+    this.errorEl = contentEl.createDiv({ cls: "youtube-tracker-error mod-warning" });
+    this.errorEl.hide();
+    const actions = contentEl.createDiv({ cls: "modal-button-container" });
+    const cancel = actions.createEl("button", { text: "Cancel" });
+    cancel.addEventListener("click", () => this.close());
+    this.saveBtn = actions.createEl("button", { text: "Add channel", cls: "mod-cta" });
+    this.saveBtn.addEventListener("click", () => {
+      void this.handleSave();
+    });
+  }
+  onClose() {
+    this.contentEl.empty();
+  }
+  clearError() {
+    this.errorEl?.hide();
+  }
+  showError(msg) {
+    if (this.errorEl) {
+      this.errorEl.setText(msg);
+      this.errorEl.show();
+    }
+  }
+  async handleSave() {
+    if (this.busy)
+      return;
+    const value = this.url.trim();
+    if (!value) {
+      this.showError("Enter a URL first.");
+      return;
+    }
+    this.busy = true;
+    this.saveBtn?.setText("Resolving\u2026");
+    this.saveBtn?.setAttr("disabled", "true");
+    try {
+      await this.onSubmit(value);
+      this.close();
+    } catch (e) {
+      this.showError(e instanceof Error ? e.message : "Could not add the channel.");
+    } finally {
+      this.busy = false;
+      this.saveBtn?.setText("Add channel");
+      this.saveBtn?.removeAttribute("disabled");
+    }
+  }
+};
+
+var import_obsidian3 = require("obsidian");
+
+var CHANNEL_ID_RE = /^UC[A-Za-z0-9_-]{22}$/;
+var CHANNEL_SEG_RE = /\/channel\/(UC[A-Za-z0-9_-]{22})/i;
+var HANDLE_AT_RE = /\/@([^/?#&\s]+)/;
+var CUSTOM_RE = /\/(c|user)\/([^/?#&\s]+)/i;
+function isChannelId(value) {
+  return CHANNEL_ID_RE.test(value.trim());
+}
+function buildChannelUrl(channelId) {
+  return `https://www.youtube.com/channel/${channelId}`;
+}
+function buildHandleUrl(handlePath) {
+  const clean = handlePath.replace(/^\/+/, "");
+  return `https://www.youtube.com/${clean}`;
+}
+function stripExtraPath(handle) {
+  return handle.split("/")[0].split("?")[0].split("#")[0].trim();
+}
+function parseChannelUrl(input) {
+  const raw = (input ?? "").trim();
+  if (!raw) {
+    return { kind: "invalid", reason: "Enter a channel URL." };
+  }
+  let url;
+  try {
+    const withProto = /^https?:\/\//i.test(raw) ? raw : `https://${raw}`;
+    url = new URL(withProto);
+  } catch {
+    return { kind: "invalid", reason: "Invalid URL." };
+  }
+  const host = url.hostname.toLowerCase().replace(/^m\./, "www.");
+  const isYoutube = host === "youtube.com" || host === "www.youtube.com" || host === "youtu.be";
+  if (!isYoutube) {
+    return { kind: "invalid", reason: "It must be a youtube.com URL." };
+  }
+  if (host === "youtu.be") {
+    return { kind: "invalid", reason: "That is a video URL, not a channel URL." };
+  }
+  const path = url.pathname;
+  const channelMatch = path.match(CHANNEL_SEG_RE);
+  if (channelMatch) {
+    return { kind: "channelId", channelId: channelMatch[1] };
+  }
+  const atMatch = path.match(HANDLE_AT_RE);
+  if (atMatch) {
+    const handle = stripExtraPath(atMatch[1]);
+    if (!handle) {
+      return { kind: "invalid", reason: "The channel handle is empty." };
+    }
+    return { kind: "handle", handlePath: `@${handle}` };
+  }
+  const customMatch = path.match(CUSTOM_RE);
+  if (customMatch) {
+    const prefix = customMatch[1].toLowerCase();
+    const name = stripExtraPath(customMatch[2]);
+    if (!name) {
+      return { kind: "invalid", reason: "The channel name is empty." };
+    }
+    return { kind: "handle", handlePath: `${prefix}/${name}` };
+  }
+  const bare = raw.trim().replace(/^https?:\/\/[^/]+\//, "");
+  if (isChannelId(bare)) {
+    return { kind: "channelId", channelId: bare };
+  }
+  return {
+    kind: "invalid",
+    reason: "Unrecognized URL. Try /channel/ID or /@handle."
+  };
+}
+
+// src/services/channel-resolver.ts
+function rssUrlFor(channelId) {
+  return `https://www.youtube.com/feeds/videos.xml?channel_id=${channelId}`;
+}
+var defaultHtmlFetcher = async (url) => {
+  const res = await (0, import_obsidian3.requestUrl)({
+    url,
+    method: "GET",
+    headers: { "User-Agent": "Mozilla/5.0 (Obsidian plugin)" }
+  });
+  if (res.status < 200 || res.status >= 300) {
+    throw new Error(`YouTube responded ${res.status}.`);
+  }
+  return res.text;
+};
+var defaultRssFetcher = async (channelId) => {
+  const res = await (0, import_obsidian3.requestUrl)({
+    url: rssUrlFor(channelId),
+    method: "GET",
+    headers: { "User-Agent": "Mozilla/5.0 (Obsidian plugin)" }
+  });
+  if (res.status === 404) {
+    throw new Error("Channel not found (404).");
+  }
+  if (res.status < 200 || res.status >= 300) {
+    throw new Error(`Feed responded ${res.status}.`);
+  }
+  return res.text;
+};
+function firstGroup(html, patterns) {
+  for (const re of patterns) {
+    const m = html.match(re);
+    if (m?.[1])
+      return m[1];
+  }
+  return void 0;
+}
+function extractChannelIdFromHtml(html) {
+  const id = firstGroup(html, [
+    /<link[^>]+rel=["']canonical["'][^>]+href=["']https:\/\/(?:www\.)?youtube\.com\/channel\/(UC[A-Za-z0-9_-]{22})["']/i,
+    /<meta[^>]+property=["']og:url["'][^>]+content=["']https:\/\/(?:www\.)?youtube\.com\/channel\/(UC[A-Za-z0-9_-]{22})["']/i,
+    /"channelId"\s*:\s*"(UC[A-Za-z0-9_-]{22})"/,
+    /"browseId"\s*:\s*"(UC[A-Za-z0-9_-]{22})"/,
+    /\/channel\/(UC[A-Za-z0-9_-]{22})/
+  ]);
+  return id;
+}
+function decodeHtmlEntities(s) {
+  return s.replace(/&amp;/g, "&").replace(/&lt;/g, "<").replace(/&gt;/g, ">").replace(/&quot;/g, '"').replace(/&#39;/g, "'").replace(/&#x27;/g, "'");
+}
+function extractChannelNameFromHtml(html) {
+  const raw = firstGroup(html, [
+    /<meta[^>]+property=["']og:title["'][^>]+content=["']([^"']+)["']/i,
+    /<meta[^>]+content=["']([^"']+)["'][^>]+property=["']og:title["']/i,
+    /<title>([^<]+)<\/title>/i
+  ]);
+  if (!raw)
+    return void 0;
+  const clean = decodeHtmlEntities(raw).replace(/\s*-\s*YouTube\s*$/i, "").trim();
+  return clean || void 0;
+}
+function extractChannelNameFromRss(xml) {
+  const author = xml.match(/<author>\s*<name>([^<]+)<\/name>/i)?.[1]?.trim();
+  if (author)
+    return decodeHtmlEntities(author);
+  const title = xml.match(/<feed[^>]*>[\s\S]*?<title>([^<]+)<\/title>/i)?.[1]?.trim();
+  if (title)
+    return decodeHtmlEntities(title);
+  return void 0;
+}
+function toUserError(e, fallback) {
+  if (e instanceof Error) {
+    const msg = e.message.toLowerCase();
+    if (msg.includes("failed to fetch") || msg.includes("network") || msg.includes("enotfound") || msg.includes("econn")) {
+      return new Error("No connection to YouTube. Check your network and try again.");
+    }
+    const status = msg.match(/(?:youtube|feed) responded (\d+)/)?.[1];
+    if (status === "404" || msg.includes("channel not found")) {
+      return new Error("Could not find or access this channel. Check the URL.");
+    }
+    if (status === "403" || status === "429" || status && Number(status) >= 500) {
+      return new Error("YouTube could not verify this channel right now. Try again later.");
+    }
+    return e;
+  }
+  return new Error(fallback);
+}
+async function resolveChannelFromUrl(input, deps = {}) {
+  const parsed = parseChannelUrl(input);
+  if (parsed.kind === "invalid") {
+    throw new Error(parsed.reason);
+  }
+  const fetchHtml = deps.fetchHtml ?? defaultHtmlFetcher;
+  const fetchRss = deps.fetchRss ?? defaultRssFetcher;
+  if (parsed.kind === "channelId") {
+    const channelId2 = parsed.channelId;
+    const channelUrl = buildChannelUrl(channelId2);
+    try {
+      const xml = await fetchRss(channelId2);
+      const name2 = extractChannelNameFromRss(xml) ?? channelId2;
+      return { channelId: channelId2, name: name2, channelUrl };
+    } catch (e) {
+      try {
+        const html2 = await fetchHtml(channelUrl);
+        const found = extractChannelIdFromHtml(html2);
+        if (found && found !== channelId2) {
+          throw new Error("The ID does not match the channel.");
+        }
+        const name2 = extractChannelNameFromHtml(html2) ?? channelId2;
+        return { channelId: channelId2, name: name2, channelUrl };
+      } catch (e2) {
+        throw toUserError(e2 instanceof Error && e2.message.includes("match") ? e2 : e, "Could not verify the channel.");
+      }
+    }
+  }
+  const pageUrl = buildHandleUrl(parsed.handlePath);
+  let html;
+  try {
+    html = await fetchHtml(pageUrl);
+  } catch (e) {
+    throw toUserError(e, "Could not open the channel page.");
+  }
+  const channelId = extractChannelIdFromHtml(html);
+  if (!channelId) {
+    throw new Error("Could not resolve the channel ID from that URL. Try a /channel/ID URL.");
+  }
+  const name = extractChannelNameFromHtml(html) ?? parsed.handlePath;
+  return { channelId, name, channelUrl: buildChannelUrl(channelId) };
+}
+
+// src/services/youtube-rss.ts
+var import_obsidian4 = require("obsidian");
+function rssUrlFor2(channelId) {
+  return `https://www.youtube.com/feeds/videos.xml?channel_id=${channelId}`;
+}
+function sleep(ms) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+function isRetryableStatus(status) {
+  return status === 429 || status === 408 || status === 425 || status >= 500 && status < 600;
+}
+function statusFromError(e) {
+  if (e instanceof Error) {
+    const anyErr = e;
+    if (typeof anyErr.status === "number")
+      return anyErr.status;
+    const m = e.message.match(/(?:feed|youtube) responded (\d+)/i) ?? e.message.match(/(?:feed|youtube) respondió (\d+)/i);
+    if (m?.[1])
+      return Number(m[1]);
+  }
+  return void 0;
+}
+var defaultFetcher = async (channelId) => {
+  const res = await (0, import_obsidian4.requestUrl)({
+    url: rssUrlFor2(channelId),
+    method: "GET",
+    headers: {
+      "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0 Safari/537.36",
+      Accept: "application/atom+xml, application/xml, text/xml, */*"
+    }
+  });
+  if (res.status === 404) {
+    throw new Error("Feed responded 404.");
+  }
+  if (res.status < 200 || res.status >= 300) {
+    throw new Error(`Feed responded ${res.status}.`);
+  }
+  return res.text;
+};
+async function fetchChannelPageHtml(channelId) {
+  const urls = [
+    `https://www.youtube.com/channel/${channelId}/videos`,
+    `https://www.youtube.com/channel/${channelId}`
+  ];
+  let lastError;
+  for (const url of urls) {
+    try {
+      const res = await (0, import_obsidian4.requestUrl)({
+        url,
+        method: "GET",
+        headers: {
+          "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0 Safari/537.36",
+          "Accept-Language": "es-ES,es;q=0.9,en;q=0.8"
+        }
+      });
+      if (res.status >= 200 && res.status < 300 && typeof res.text === "string" && res.text.length > 1e4) {
+        return res.text;
+      }
+      lastError = new Error(`YouTube responded ${res.status}.`);
+    } catch (e) {
+      lastError = e;
+    }
+  }
+  throw lastError instanceof Error ? lastError : new Error("Could not open the channel page.");
+}
+function extractShortVideoIdsFromHtml(html) {
+  const ids = [];
+  const re = /\/shorts\/([A-Za-z0-9_-]{11})/g;
+  let match;
+  while ((match = re.exec(html)) !== null) {
+    if (!ids.includes(match[1]))
+      ids.push(match[1]);
+  }
+  return ids;
+}
+function extractVideoIdsFromHtml(html, max = 10) {
+  const ordered = [];
+  const push = (id) => {
+    if (/^[A-Za-z0-9_-]{11}$/.test(id) && !ordered.includes(id) && ordered.length < max) {
+      ordered.push(id);
+    }
+  };
+  const re1 = /"videoId"\s*:\s*"([A-Za-z0-9_-]{11})"/g;
+  let m;
+  while ((m = re1.exec(html)) !== null)
+    push(m[1]);
+  const re2 = /\/(?:watch\?v=|shorts\/)([A-Za-z0-9_-]{11})/g;
+  while ((m = re2.exec(html)) !== null)
+    push(m[1]);
+  return ordered;
+}
+async function fetchTitleViaOEmbed(videoId) {
+  try {
+    const res = await (0, import_obsidian4.requestUrl)({
+      url: `https://www.youtube.com/oembed?url=${encodeURIComponent(`https://www.youtube.com/watch?v=${videoId}`)}&format=json`,
+      method: "GET",
+      headers: { "User-Agent": "Mozilla/5.0 (Obsidian plugin)" }
+    });
+    if (res.status >= 200 && res.status < 300) {
+      const data = typeof res.json === "object" && res.json !== null ? res.json : JSON.parse(res.text);
+      const title = typeof data.title === "string" ? data.title : void 0;
+      const author = typeof data.author_name === "string" ? data.author_name : void 0;
+      return { title, author };
+    }
+  } catch {
+  }
+  return {};
+}
+async function fetchViaHtmlFallback(channelId, channelName) {
+  const html = await fetchChannelPageHtml(channelId);
+  const shorts = new Set(extractShortVideoIdsFromHtml(html));
+  const ids = extractVideoIdsFromHtml(html, 30).filter((id) => !shorts.has(id)).slice(0, 5);
+  if (ids.length === 0) {
+    if (shorts.size > 0)
+      throw new NoEligibleVideosError();
+    throw new Error("YouTube returned no feed and the channel page contained no visible videos.");
+  }
+  const firstPublishedAt = await resolveFallbackDate(ids[0], html);
+  const entries = [];
+  for (let i = 0; i < ids.slice(0, 3).length; i++) {
+    const videoId = ids[i];
+    const meta = await fetchTitleViaOEmbed(videoId);
+    entries.push({
+      videoId,
+      title: meta.title ?? "Recent video (title unavailable)",
+      linkHref: `https://www.youtube.com/watch?v=${videoId}`,
+      publishedAt: i === 0 ? firstPublishedAt : void 0,
+      channelId,
+      channelName: meta.author ?? channelName,
+      thumbnail: `https://i.ytimg.com/vi/${videoId}/hqdefault.jpg`
+    });
+  }
+  return entries;
+}
+function parseRelativeTimeToIso(text, now = Date.now()) {
+  const t = text.toLowerCase().trim();
+  if (/^(hoy|today)/.test(t))
+    return new Date(now).toISOString();
+  if (/^(ayer|yesterday)/.test(t))
+    return new Date(now - 864e5).toISOString();
+  const m = t.match(/(\d+|una?|one|an?)\s*(segundos?|seconds?|secs?|minutos?|minutes?|mins?|horas?|hours?|hrs?|h\b|d[ií]as?|days?|d\b|semanas?|weeks?|w\b|meses?|months?|años?|anos?|years?)/);
+  if (!m)
+    return void 0;
+  const n = /^\d+$/.test(m[1]) ? Number.parseInt(m[1], 10) : 1;
+  const unit = m[2];
+  let ms = 0;
+  if (/seg|sec/.test(unit))
+    ms = n * 1e3;
+  else if (/min/.test(unit))
+    ms = n * 6e4;
+  else if (/hor|hour|hr|^h$/.test(unit))
+    ms = n * 36e5;
+  else if (/d[ií]a|day|^d$/.test(unit))
+    ms = n * 864e5;
+  else if (/seman|week|^w$/.test(unit))
+    ms = n * 7 * 864e5;
+  else if (/mes|month/.test(unit))
+    ms = n * 30 * 864e5;
+  else if (/año|ano|year/.test(unit))
+    ms = n * 365 * 864e5;
+  else
+    return void 0;
+  return new Date(now - ms).toISOString();
+}
+function extractPublishedAtFromWatchHtml(html) {
+  const meta = html.match(/<meta[^>]+itemprop=["']datePublished["'][^>]+content=["']([^"']+)["']/i) ?? html.match(/<meta[^>]+content=["']([^"']+)["'][^>]+itemprop=["']datePublished["']/i);
+  if (meta?.[1]) {
+    const t = Date.parse(meta[1].trim());
+    if (!Number.isNaN(t))
+      return new Date(t).toISOString();
+  }
+  const jsonDate = html.match(/"(?:uploadDate|publishDate)"\s*:\s*"([^"]+)"/);
+  if (jsonDate?.[1]) {
+    const t = Date.parse(jsonDate[1].trim());
+    if (!Number.isNaN(t))
+      return new Date(t).toISOString();
+  }
+  const rel = html.match(/"publishedTimeText"\s*:\s*\{\s*"simpleText"\s*:\s*"([^"]+)"/);
+  if (rel?.[1])
+    return parseRelativeTimeToIso(rel[1]);
+  return void 0;
+}
+async function resolveFallbackDate(videoId, channelHtml) {
+  try {
+    const res = await (0, import_obsidian4.requestUrl)({
+      url: `https://www.youtube.com/watch?v=${videoId}`,
+      method: "GET",
+      headers: {
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0 Safari/537.36",
+        "Accept-Language": "es-ES,es;q=0.9,en;q=0.8"
+      }
+    });
+    if (res.status >= 200 && res.status < 300 && typeof res.text === "string" && res.text.length > 5e4) {
+      const found = extractPublishedAtFromWatchHtml(res.text);
+      if (found)
+        return found;
+    }
+  } catch {
+  }
+  const rel = channelHtml.match(/"publishedTimeText"\s*:\s*\{\s*"simpleText"\s*:\s*"([^"]+)"/);
+  if (rel?.[1])
+    return parseRelativeTimeToIso(rel[1]);
+  return void 0;
+}
+function decodeEntities(s) {
+  return s.replace(/&amp;/g, "&").replace(/&lt;/g, "<").replace(/&gt;/g, ">").replace(/&quot;/g, '"').replace(/&#39;/g, "'").replace(/&#x27;/g, "'").replace(/<!\[CDATA\[([\s\S]*?)\]\]>/g, "$1");
+}
+function pickTag(block, tag) {
+  const m = block.match(new RegExp(`<${tag}[^>]*>([\\s\\S]*?)<\\/${tag}>`, "i"));
+  return m ? decodeEntities(m[1]).trim() || void 0 : void 0;
+}
+function pickLinkHref(block) {
+  const m1 = block.match(/<link[^>]+rel=["']alternate["'][^>]+href=["']([^"']+)["']/i);
+  if (m1?.[1])
+    return decodeEntities(m1[1]).trim();
+  const m2 = block.match(/<link[^>]+href=["']([^"']+)["'][^>]*\/?>/i);
+  if (m2?.[1])
+    return decodeEntities(m2[1]).trim();
+  return void 0;
+}
+function pickThumbnail(block) {
+  const m = block.match(/<media:thumbnail[^>]+url=["']([^"']+)["']/i);
+  if (m?.[1])
+    return decodeEntities(m[1]).trim() || void 0;
+  return void 0;
+}
+function pickAuthorName(block) {
+  const m = block.match(/<author>[\s\S]*?<name>([^<]+)<\/name>/i);
+  return m ? decodeEntities(m[1]).trim() || void 0 : void 0;
+}
+function parseRssEntries(xml, fallbackChannelId, fallbackChannelName) {
+  if (!/<feed[\s>]|<rss[\s>]/i.test(xml)) {
+    throw new Error("Invalid feed.");
+  }
+  const feedChannelId = xml.match(/<yt:channelId>([^<]+)<\/yt:channelId>/i)?.[1]?.trim() ?? fallbackChannelId;
+  const feedTitle = xml.match(/<feed[^>]*>[\s\S]*?<title>([^<]+)<\/title>/i)?.[1]?.trim();
+  const feedAuthor = xml.match(/<feed[^>]*>[\s\S]*?<author>[\s\S]*?<name>([^<]+)<\/name>/i)?.[1]?.trim();
+  const channelName = decodeEntities(feedAuthor ?? feedTitle ?? fallbackChannelName);
+  const entries = [];
+  const blocks = xml.match(/<entry[\s\S]*?<\/entry>/gi) ?? [];
+  for (const block of blocks) {
+    const videoId = block.match(/<yt:videoId>([^<]+)<\/yt:videoId>/i)?.[1]?.trim() ?? block.match(/<id>\s*yt:video:([^<]+)<\/id>/i)?.[1]?.trim();
+    if (!videoId)
+      continue;
+    const title = pickTag(block, "title") ?? "Untitled video";
+    const linkHref = pickLinkHref(block) ?? `https://www.youtube.com/watch?v=${videoId}`;
+    const publishedAt = pickTag(block, "published") ?? pickTag(block, "updated");
+    const entryChannelId = block.match(/<yt:channelId>([^<]+)<\/yt:channelId>/i)?.[1]?.trim() ?? feedChannelId;
+    const entryAuthor = pickAuthorName(block) ?? channelName;
+    const thumbnail = pickThumbnail(block);
+    entries.push({
+      videoId: videoId.trim(),
+      title,
+      linkHref,
+      publishedAt,
+      channelId: entryChannelId,
+      channelName: entryAuthor,
+      thumbnail
+    });
+  }
+  return entries;
+}
+var NoEligibleVideosError = class extends Error {
+  constructor() {
+    super("Only recent Shorts were found; they are excluded.");
+    this.name = "NoEligibleVideosError";
+  }
+};
+function userError(message, kind, status) {
+  const error = new Error(message);
+  error.refreshErrorKind = kind;
+  if (status !== void 0)
+    error.status = status;
+  return error;
+}
+function isRecoverableRefreshError(e) {
+  if (e instanceof Error && e.refreshErrorKind) {
+    return e.refreshErrorKind === "recoverable";
+  }
+  return statusFromError(e) !== 404;
+}
+function toUserError2(e) {
+  if (e instanceof Error && e.refreshErrorKind) {
+    return e;
+  }
+  const message = e instanceof Error ? e.message : "";
+  const lower = message.toLowerCase();
+  const status = statusFromError(e);
+  if (status === 429) {
+    return userError("YouTube is limiting requests. Wait a few minutes, then choose Refresh to try again.", "recoverable", status);
+  }
+  if (status === 403) {
+    return userError("YouTube could not process the request. Wait a little, then choose Refresh to try again.", "recoverable", status);
+  }
+  if (status !== void 0 && status >= 500 && status < 600) {
+    return userError("YouTube is having trouble. Wait a little, then choose Refresh to try again.", "recoverable", status);
+  }
+  if (status === 404) {
+    return userError("Could not check this channel. Check the link or try again later.", "permanent", status);
+  }
+  if (lower.includes("invalid feed") || lower.includes("invalid response") || lower.includes("feed inv\xE1lido") || lower.includes("respuesta inv\xE1lida")) {
+    return userError("Could not read YouTube's response. Choose Refresh to try again later.", "recoverable");
+  }
+  if (lower.includes("failed to fetch") || lower.includes("network") || lower.includes("enotfound") || lower.includes("econn") || lower.includes("timeout") || lower.includes("abort") || lower.includes("sin conexi\xF3n")) {
+    return userError("No connection to YouTube. Check your network and choose Refresh to try again.", "recoverable");
+  }
+  return userError("Could not check this channel. Choose Refresh to try again later.", "recoverable");
+}
+async function fetchChannelEntries(channelId, fetcher = defaultFetcher, maxAttempts = 3) {
+  let lastError;
+  for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+    try {
+      const xml = await fetcher(channelId);
+      try {
+        return parseRssEntries(xml, channelId, channelId);
+      } catch (e) {
+        throw toUserError2(e);
+      }
+    } catch (e) {
+      lastError = e;
+      const friendly = toUserError2(e);
+      const status = statusFromError(e);
+      const retryable = status !== void 0 ? isRetryableStatus(status) : /no connection|temporarily|try again later|sin conexión|temporalmente|bloqueo temporal/i.test(friendly.message);
+      if (attempt >= maxAttempts || !retryable) {
+        throw friendly;
+      }
+      const backoff = 1200 * 2 ** (attempt - 1) + Math.floor(Math.random() * 400);
+      await sleep(backoff);
+    }
+  }
+  throw toUserError2(lastError);
+}
+
+function classifyShort(linkHref) {
+  if (/\/shorts\//i.test(linkHref))
+    return "short";
+  return "unknown";
+}
+function toVideoEntry(raw) {
+  const shortStatus = classifyShort(raw.linkHref);
+  const isShort = shortStatus === "short";
+  return {
+    videoId: raw.videoId,
+    title: raw.title,
+    url: isShort ? raw.linkHref : `https://www.youtube.com/watch?v=${raw.videoId}`,
+    publishedAt: raw.publishedAt,
+    channelId: raw.channelId,
+    channelName: raw.channelName,
+    thumbnail: raw.thumbnail,
+    shortStatus
+  };
+}
+function selectLatestNonShort(rawEntries) {
+  if (rawEntries.length === 0)
+    return { kind: "empty" };
+  const sorted = [...rawEntries].sort((a, b) => {
+    const ta = parseDateSafe(a.publishedAt) ?? -1;
+    const tb = parseDateSafe(b.publishedAt) ?? -1;
+    return tb - ta;
+  });
+  let sawShort = false;
+  for (const raw of sorted) {
+    if (classifyShort(raw.linkHref) === "short") {
+      sawShort = true;
+      continue;
+    }
+    return { kind: "video", entry: toVideoEntry(raw) };
+  }
+  return sawShort ? { kind: "all-shorts" } : { kind: "empty" };
+}
+
+var INTER_CHANNEL_DELAY_MS = 700;
+var MIN_REFRESH_INTERVAL_MS = 3e4;
+var MAX_FETCH_ATTEMPTS = 3;
+var YoutubeTrackerPlugin = class extends import_obsidian5.Plugin {
+  constructor() {
+    super(...arguments);
+    this.settings = { ...DEFAULT_SETTINGS };
+    this.isRefreshing = false;
+  }
+  async onload() {
+    this.settings = normalizeSettings(await this.loadData());
+    this.registerView(
+      VIEW_TYPE_TRACKER,
+      (leaf) => new TrackerDashboardView(leaf, this.settings, {
+        onAdd: () => this.openAddModal(),
+        onRemove: (id) => void this.removeChannel(id),
+        onRefresh: () => void this.refreshAll()
+      })
+    );
+    this.addCommand({
+      id: "open-youtube-tracker",
+      name: "Open YouTube Tracker",
+      callback: () => {
+        void this.activateView();
+      }
+    });
+    this.addCommand({
+      id: "refresh-youtube-tracker",
+      name: "Refresh videos",
+      callback: () => {
+        void this.refreshAll();
+      }
+    });
+    this.addRibbonIcon("rss", "Open YouTube Tracker", () => {
+      void this.activateView();
+    });
+  }
+  onunload() {
+  }
+  async saveSettings() {
+    await this.saveData(this.settings);
+    this.refreshOpenViews();
+  }
+  openAddModal() {
+    const modal = new ChannelFormModal(this.app, async (url) => {
+      await this.addChannel(url);
+    });
+    modal.open();
+  }
+  async addChannel(url) {
+    const resolved = await resolveChannelFromUrl(url);
+    const exists = this.settings.channels.some((c) => c.channelId === resolved.channelId);
+    if (exists) {
+      throw new Error("This channel is already on the list.");
+    }
+    this.settings.channels.push({
+      channelId: resolved.channelId,
+      name: resolved.name,
+      channelUrl: resolved.channelUrl
+    });
+    await this.saveSettings();
+    new import_obsidian5.Notice(`Channel added: ${resolved.name}`);
+  }
+  async removeChannel(channelId) {
+    const before = this.settings.channels.length;
+    this.settings.channels = this.settings.channels.filter((c) => c.channelId !== channelId);
+    if (this.settings.channels.length === before)
+      return;
+    await this.saveSettings();
+    new import_obsidian5.Notice("Channel removed.");
+  }
+  async refreshAll() {
+    if (this.isRefreshing) {
+      new import_obsidian5.Notice("A refresh is already in progress.");
+      return;
+    }
+    if (this.settings.channels.length === 0) {
+      new import_obsidian5.Notice("Add a channel first.");
+      return;
+    }
+    const sinceLast = this.settings.lastGlobalRefreshAt ? Date.now() - this.settings.lastGlobalRefreshAt : Number.POSITIVE_INFINITY;
+    if (sinceLast < MIN_REFRESH_INTERVAL_MS) {
+      const waitSec = Math.ceil((MIN_REFRESH_INTERVAL_MS - sinceLast) / 1e3);
+      new import_obsidian5.Notice(`Wait ${waitSec}s before refreshing to avoid YouTube rate limits.`);
+      return;
+    }
+    this.isRefreshing = true;
+    this.setRefreshingViews(true);
+    let ok = 0;
+    let failed = 0;
+    let rateLimited = 0;
+    for (let i = 0; i < this.settings.channels.length; i++) {
+      const channel = this.settings.channels[i];
+      try {
+        let entries;
+        try {
+          entries = await fetchChannelEntries(channel.channelId, void 0, MAX_FETCH_ATTEMPTS);
+        } catch (rssError) {
+          if (statusFromError(rssError) === 404) {
+            entries = await fetchViaHtmlFallback(channel.channelId, channel.name || channel.channelId);
+          } else {
+            throw rssError;
+          }
+        }
+        const sel = selectLatestNonShort(entries);
+        if (sel.kind === "video") {
+          channel.lastVideo = sel.entry;
+          channel.lastFetchedAt = Date.now();
+          channel.lastResult = "video";
+          channel.lastError = void 0;
+          channel.lastErrorKind = void 0;
+          if ((!channel.name || channel.name === channel.channelId) && sel.entry.channelName) {
+            channel.name = sel.entry.channelName;
+          }
+          ok++;
+        } else if (sel.kind === "all-shorts") {
+          channel.lastFetchedAt = Date.now();
+          channel.lastResult = "no-eligible-videos";
+          channel.lastError = void 0;
+          channel.lastErrorKind = void 0;
+          ok++;
+        } else {
+          channel.lastVideo = void 0;
+          channel.lastFetchedAt = Date.now();
+          channel.lastResult = "empty";
+          channel.lastError = void 0;
+          channel.lastErrorKind = void 0;
+          ok++;
+        }
+      } catch (e) {
+        if (e instanceof NoEligibleVideosError) {
+          channel.lastFetchedAt = Date.now();
+          channel.lastResult = "no-eligible-videos";
+          channel.lastError = void 0;
+          channel.lastErrorKind = void 0;
+          ok++;
+        } else {
+          const friendlyError = toUserError2(e);
+          channel.lastError = friendlyError.message;
+          channel.lastErrorKind = isRecoverableRefreshError(friendlyError) ? "recoverable" : "permanent";
+          if (statusFromError(e) === 429)
+            rateLimited++;
+          failed++;
+        }
+      } finally {
+        channel.lastAttemptAt = Date.now();
+      }
+      if (i < this.settings.channels.length - 1) {
+        await sleep(INTER_CHANNEL_DELAY_MS);
+      }
+    }
+    this.settings.lastGlobalRefreshAt = Date.now();
+    if (ok > 0) {
+      this.settings.lastSuccessfulRefreshAt = Date.now();
+    }
+    this.isRefreshing = false;
+    await this.saveSettings();
+    this.setRefreshingViews(false);
+    if (failed === 0) {
+      new import_obsidian5.Notice(`Updated ${ok} ${ok === 1 ? "channel" : "channels"}.`);
+    } else if (rateLimited > 0) {
+      new import_obsidian5.Notice(`YouTube is limiting ${rateLimited} requests. Wait a few minutes, then choose Refresh to try again.`);
+    } else {
+      new import_obsidian5.Notice(`Done: ${ok} succeeded, ${failed} need attention.`);
+    }
+  }
+  refreshOpenViews() {
+    for (const leaf of this.app.workspace.getLeavesOfType(VIEW_TYPE_TRACKER)) {
+      if (leaf.view instanceof TrackerDashboardView) {
+        leaf.view.updateCallbacks({
+          onAdd: () => this.openAddModal(),
+          onRemove: (id) => void this.removeChannel(id),
+          onRefresh: () => void this.refreshAll()
+        });
+        leaf.view.updateSettings(this.settings, this.isRefreshing);
+      }
+    }
+  }
+  setRefreshingViews(value) {
+    for (const leaf of this.app.workspace.getLeavesOfType(VIEW_TYPE_TRACKER)) {
+      if (leaf.view instanceof TrackerDashboardView) {
+        leaf.view.setRefreshing(value);
+      }
+    }
+  }
+  async activateView() {
+    const { workspace } = this.app;
+    let leaf = null;
+    const leaves = workspace.getLeavesOfType(VIEW_TYPE_TRACKER);
+    if (leaves.length > 0) {
+      leaf = leaves[0];
+    } else {
+      leaf = workspace.getRightLeaf(false);
+      if (!leaf) {
+        new import_obsidian5.Notice("Could not open the dashboard.");
+        return;
+      }
+      await leaf.setViewState({ type: VIEW_TYPE_TRACKER, active: true });
+    }
+    void workspace.revealLeaf(leaf);
+  }
+};

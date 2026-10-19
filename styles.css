@@ -1,0 +1,278 @@
+.youtube-tracker-dashboard {
+	padding: 16px 16px 32px;
+	max-width: 860px;
+	margin: 0 auto;
+}
+
+.youtube-tracker-dashboard .yt-header {
+	margin-bottom: 12px;
+}
+
+.youtube-tracker-dashboard .yt-title {
+	margin: 0 0 4px;
+	font-size: 1.35em;
+	letter-spacing: -0.01em;
+}
+
+.youtube-tracker-dashboard .yt-subtitle {
+	color: var(--text-muted);
+	font-size: 0.85em;
+}
+
+.youtube-tracker-dashboard .youtube-tracker-actions {
+	display: flex;
+	gap: 8px;
+	margin: 12px 0 8px;
+	flex-wrap: wrap;
+}
+
+.youtube-tracker-dashboard .youtube-tracker-actions button {
+	border-radius: 8px;
+	padding: 6px 14px;
+	cursor: pointer;
+}
+
+.youtube-tracker-dashboard .youtube-tracker-actions button:disabled {
+	opacity: 0.6;
+	cursor: default;
+}
+
+.youtube-tracker-dashboard .youtube-tracker-loading {
+	color: var(--text-muted);
+	font-size: 0.85em;
+	padding: 8px 2px;
+	animation: yt-pulse 1.4s ease-in-out infinite;
+}
+
+@keyframes yt-pulse {
+	0%, 100% { opacity: 0.55; }
+	50% { opacity: 1; }
+}
+
+.youtube-tracker-dashboard .youtube-tracker-list {
+	display: grid;
+	grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
+	gap: 12px;
+	margin-top: 12px;
+}
+
+.youtube-tracker-dashboard .youtube-tracker-channel-wrap {
+	background: var(--background-secondary);
+	border: 1px solid var(--background-modifier-border);
+	border-radius: 12px;
+	overflow: hidden;
+	display: flex;
+	flex-direction: column;
+	transition: border-color 0.15s ease, transform 0.15s ease;
+}
+
+.youtube-tracker-dashboard .youtube-tracker-channel-wrap:hover {
+	border-color: var(--interactive-accent);
+}
+
+.youtube-tracker-dashboard .youtube-tracker-card {
+	display: flex;
+	flex-direction: column;
+	flex: 1;
+}
+
+.youtube-tracker-dashboard .youtube-tracker-card-head {
+	display: flex;
+	align-items: flex-start;
+	gap: 8px;
+	padding: 12px 12px 8px;
+}
+
+.youtube-tracker-dashboard .yt-channel-id {
+	display: flex;
+	flex-direction: column;
+	gap: 4px;
+	min-width: 0;
+}
+
+.youtube-tracker-dashboard .yt-channel-name {
+	overflow: hidden;
+	text-overflow: ellipsis;
+	white-space: nowrap;
+	font-size: 0.95em;
+}
+
+.youtube-tracker-dashboard .yt-dot {
+	width: 9px;
+	height: 9px;
+	border-radius: 50%;
+	margin-top: 5px;
+	flex-shrink: 0;
+}
+
+.youtube-tracker-dashboard .yt-dot-ok { background: var(--color-green, #4caf50); }
+.youtube-tracker-dashboard .yt-dot-stale { background: var(--color-orange, #fb8c00); }
+.youtube-tracker-dashboard .yt-dot-error { background: var(--color-red, #f44336); }
+.youtube-tracker-dashboard .yt-dot-empty { background: var(--text-faint); }
+
+.youtube-tracker-dashboard .yt-badge {
+	align-self: flex-start;
+	font-size: 0.68em;
+	font-weight: 600;
+	text-transform: uppercase;
+	letter-spacing: 0.04em;
+	padding: 1px 7px;
+	border-radius: 999px;
+	background: var(--background-modifier-border);
+	color: var(--text-muted);
+}
+
+.youtube-tracker-dashboard .yt-badge-ok {
+	background: rgba(76, 175, 80, 0.15);
+	color: var(--color-green, #4caf50);
+}
+
+.youtube-tracker-dashboard .yt-badge-stale,
+.youtube-tracker-dashboard .yt-badge-recoverable {
+	background: rgba(251, 140, 0, 0.15);
+	color: var(--color-orange, #fb8c00);
+}
+
+.youtube-tracker-dashboard .yt-badge-permanent {
+	background: rgba(244, 67, 54, 0.14);
+	color: var(--color-red, #f44336);
+}
+
+.youtube-tracker-dashboard .yt-data-age {
+	color: var(--text-faint);
+	font-size: 0.72em;
+	line-height: 1.3;
+}
+
+.youtube-tracker-dashboard .yt-thumb {
+	aspect-ratio: 16 / 9;
+	background: var(--background-modifier-border);
+	overflow: hidden;
+}
+
+.youtube-tracker-dashboard .yt-thumb-img {
+	width: 100%;
+	height: 100%;
+	object-fit: cover;
+	display: block;
+}
+
+.youtube-tracker-dashboard .yt-body {
+	padding: 10px 12px 12px;
+	display: flex;
+	flex-direction: column;
+	gap: 6px;
+	flex: 1;
+}
+
+.youtube-tracker-dashboard .yt-video-title {
+	font-weight: 600;
+	line-height: 1.35;
+	display: -webkit-box;
+	-webkit-line-clamp: 2;
+	-webkit-box-orient: vertical;
+	overflow: hidden;
+}
+
+.youtube-tracker-dashboard .yt-video-meta {
+	color: var(--text-muted);
+	font-size: 0.78em;
+}
+
+.youtube-tracker-dashboard .yt-actions {
+	display: flex;
+	gap: 8px;
+	margin-top: 6px;
+	flex-wrap: wrap;
+}
+
+.youtube-tracker-dashboard .yt-btn {
+	font-size: 0.8em;
+	text-decoration: none;
+	padding: 5px 12px;
+	border-radius: 8px;
+	border: 1px solid var(--background-modifier-border);
+	color: var(--text-normal);
+	background: transparent;
+	cursor: pointer;
+}
+
+.youtube-tracker-dashboard .yt-btn:hover {
+	border-color: var(--interactive-accent);
+	text-decoration: none;
+}
+
+.youtube-tracker-dashboard .yt-btn-primary {
+	background: var(--interactive-accent);
+	border-color: var(--interactive-accent);
+	color: var(--text-on-accent);
+	font-weight: 600;
+}
+
+.youtube-tracker-dashboard .yt-warn,
+.youtube-tracker-dashboard .yt-error-msg {
+	font-size: 0.78em;
+	background: rgba(251, 140, 0, 0.12);
+	border: 1px solid rgba(251, 140, 0, 0.35);
+	color: var(--text-normal);
+	border-radius: 8px;
+	padding: 6px 8px;
+	line-height: 1.4;
+	word-break: break-word;
+}
+
+.youtube-tracker-dashboard .yt-error-title {
+	font-weight: 600;
+}
+
+.youtube-tracker-dashboard .yt-empty {
+	color: var(--text-muted);
+	font-size: 0.85em;
+}
+
+.youtube-tracker-dashboard .yt-card-footer {
+	padding: 0 12px 12px;
+	display: flex;
+	justify-content: flex-end;
+}
+
+.youtube-tracker-dashboard .yt-btn-ghost {
+	background: transparent;
+	border: none;
+	color: var(--text-faint);
+	font-size: 0.75em;
+	cursor: pointer;
+	padding: 2px 4px;
+}
+
+.youtube-tracker-dashboard .yt-btn-ghost:hover {
+	color: var(--color-red, #f44336);
+}
+
+.youtube-tracker-dashboard .youtube-tracker-empty {
+	grid-column: 1 / -1;
+	text-align: center;
+	padding: 40px 16px;
+	border: 1px dashed var(--background-modifier-border);
+	border-radius: 12px;
+	color: var(--text-muted);
+}
+
+.youtube-tracker-dashboard .yt-empty-title {
+	font-weight: 600;
+	color: var(--text-normal);
+	margin: 0 0 8px;
+}
+
+.youtube-tracker-dashboard .yt-empty-sub {
+	margin: 4px 0;
+}
+
+.youtube-tracker-dashboard .yt-empty-sub {
+	font-size: 0.85em;
+}
+
+/* Modal */
+.youtube-tracker-form input[type="text"] {
+	border-radius: 8px;
+}
